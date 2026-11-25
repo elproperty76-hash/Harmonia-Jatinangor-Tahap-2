@@ -1,0 +1,6 @@
+{
+  "name": "Harmonia Student House Jatinangor — Ekspansi Tahap 2",
+  "description": "Peluang Investasi Aset Produktif Di Jatinangor. Rukost Modern Ring 1 UNPAD & ITB dengan fitur booking unit online, galeri fasilitas, dan integrasi peta lokasi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

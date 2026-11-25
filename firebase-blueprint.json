@@ -1,0 +1,183 @@
+{
+  "entities": {
+    "UnitReservation": {
+      "title": "UnitReservation",
+      "description": "Public non-PII availability lock status for each unit across Blok A-H on the Harmonia Jatinangor siteplan.",
+      "type": "object",
+      "properties": {
+        "unitCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 10,
+          "pattern": "^(A[12]|B1|C([1-9]|1[0-4])|D[1-3]|E([1-9]|1[0-9]|2[0-2])|F[1-8]|G([1-9]|[1-4][0-9]|5[0-2])|H[1-5])$",
+          "description": "Unique unit identifier from siteplan (e.g. A1, E12, G45, H5)."
+        },
+        "blockId": {
+          "type": "string",
+          "enum": ["A", "B", "C", "D", "E", "F", "G1", "G2", "H"],
+          "description": "Block group identifier."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["booked", "confirmed"],
+          "description": "Current reservation lock state of the unit."
+        },
+        "bookedByUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the investor who reserved the unit."
+        },
+        "bookingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Reference ID of the corresponding UnitBooking document."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last status update."
+        }
+      },
+      "required": ["unitCode", "blockId", "status", "bookedByUid", "bookingId", "updatedAt"]
+    },
+    "UnitBooking": {
+      "title": "UnitBooking",
+      "description": "Investor booking record with contact details and selected payment scheme.",
+      "type": "object",
+      "properties": {
+        "bookingCode": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 24,
+          "pattern": "^HSHJ-[A-Z0-9-]+$",
+          "description": "Human-readable booking receipt code."
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Owner Firebase Auth UID."
+        },
+        "unitCode": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 10,
+          "pattern": "^(A[12]|B1|C([1-9]|1[0-4])|D[1-3]|E([1-9]|1[0-9]|2[0-2])|F[1-8]|G([1-9]|[1-4][0-9]|5[0-2])|H[1-5])$",
+          "description": "Selected unit code."
+        },
+        "blockId": {
+          "type": "string",
+          "enum": ["A", "B", "C", "D", "E", "F", "G1", "G2", "H"],
+          "description": "Selected block group."
+        },
+        "blockName": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 80,
+          "description": "Exact unit block title from PDF."
+        },
+        "fullName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100,
+          "description": "Full name of prospective buyer/investor."
+        },
+        "whatsapp": {
+          "type": "string",
+          "minLength": 9,
+          "maxLength": 20,
+          "pattern": "^(\\+62|62|0)[0-9]{8,15}$",
+          "description": "Active WhatsApp phone number."
+        },
+        "email": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 120,
+          "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+          "description": "Investor email address."
+        },
+        "paymentScheme": {
+          "type": "string",
+          "enum": ["cash_keras", "cicilan_syariah"],
+          "description": "Selected Sharia payment method."
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 400,
+          "description": "Optional investor notes or survey schedule request."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "confirmed", "cancelled"],
+          "description": "Booking lifecycle status."
+        },
+        "investmentValueLabel": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 40,
+          "description": "Unit investment value from PDF ROI table."
+        },
+        "transferProofName": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 140,
+          "description": "Filename of attached transfer proof photo."
+        },
+        "ktpPhotoName": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 140,
+          "description": "Filename of attached KTP identity photo."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "bookingCode",
+        "userId",
+        "unitCode",
+        "blockId",
+        "blockName",
+        "fullName",
+        "whatsapp",
+        "email",
+        "paymentScheme",
+        "notes",
+        "status",
+        "investmentValueLabel",
+        "transferProofName",
+        "ktpPhotoName",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/unit_reservations/{unitCode}": {
+      "schema": {
+        "$ref": "#/entities/UnitReservation"
+      },
+      "description": "Public availability status for each numbered unit on the siteplan (no PII)."
+    },
+    "/bookings/{bookingId}": {
+      "schema": {
+        "$ref": "#/entities/UnitBooking"
+      },
+      "description": "Private online unit bookings owned by authenticated investors or managed by admin."
+    }
+  }
+}
