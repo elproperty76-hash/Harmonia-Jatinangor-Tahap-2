@@ -42,7 +42,7 @@ export function FacilityGallerySection({
               Galeri Fasilitas Kawasan &amp; Interior Unit
             </h2>
             <p className="text-slate-600 text-[15px] leading-relaxed">
-              Visualisasi asli kawasan Harmonia Student House Jatinangor dalam resolusi dan proporsi asli PDF: gerbang One Gate System, shuttle bus, ruko komersial, taman terbuka, serta kamar siap huni.
+              Visualisasi kawasan Harmonia Student House Jatinangor: gerbang One Gate System, shuttle bus, ruko komersial, taman terbuka, serta kamar siap huni.
             </p>
             <div className="h-[3px] w-20 bg-[#F2BA36]" aria-hidden="true" />
           </div>
@@ -122,9 +122,6 @@ export function FacilityGallerySection({
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-[#1C2A44] leading-snug">
                       {item.title}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5 font-mono tabular-nums">
-                      Halaman {item.pageRef} · {item.width}×{item.height}px Asli PDF
                     </p>
                   </div>
                   <Maximize2

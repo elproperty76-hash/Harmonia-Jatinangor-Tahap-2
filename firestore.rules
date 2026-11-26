@@ -42,6 +42,11 @@ service cloud.firestore {
       );
     }
 
+    function isValidActorId(actorId) {
+      return (isVerifiedUser() && actorId == request.auth.uid)
+        || (!isSignedIn() && actorId is string && actorId.size() >= 8 && actorId.size() <= 64 && actorId.matches('^guest_[a-zA-Z0-9_\\-]+$'));
+    }
+
     function isValidUnitReservation(data) {
       return data.keys().hasAll(['unitCode', 'blockId', 'status', 'bookedByUid', 'bookingId', 'updatedAt'])
         && data.keys().hasOnly(['unitCode', 'blockId', 'status', 'bookedByUid', 'bookingId', 'updatedAt'])
@@ -93,14 +98,15 @@ service cloud.firestore {
     match /unit_reservations/{unitCode} {
       allow get: if isValidUnitCode(unitCode);
       allow list: if true;
-      allow create: if isVerifiedUser()
-        && isValidUnitCode(unitCode)
+      allow create: if isValidUnitCode(unitCode)
         && isValidUnitReservation(incoming())
         && incoming().unitCode == unitCode
-        && incoming().bookedByUid == request.auth.uid
+        && isValidActorId(incoming().bookedByUid)
         && incoming().status == 'booked'
         && incoming().updatedAt == request.time
-        && existsAfter(/databases/$(database)/documents/bookings/$(incoming().bookingId));
+        && existsAfter(/databases/$(database)/documents/bookings/$(incoming().bookingId))
+        && getAfter(/databases/$(database)/documents/bookings/$(incoming().bookingId)).data.unitCode == unitCode
+        && getAfter(/databases/$(database)/documents/bookings/$(incoming().bookingId)).data.userId == incoming().bookedByUid;
       allow update: if isVerifiedUser()
         && isValidUnitCode(unitCode)
         && isValidUnitReservation(incoming())
@@ -120,21 +126,22 @@ service cloud.firestore {
       );
     }
 
-    // Private booking records (PII isolated to owner & admin)
+    // Private booking records (PII isolated to owner & admin; create allowed atomically with unit reservation)
     match /bookings/{bookingId} {
       allow get: if isSignedIn()
         && isValidId(bookingId)
         && (existing().userId == request.auth.uid || isAdmin());
       allow list: if isSignedIn()
         && (resource.data.userId == request.auth.uid || isAdmin());
-      allow create: if isVerifiedUser()
-        && isValidId(bookingId)
+      allow create: if isValidId(bookingId)
         && isValidUnitBooking(incoming())
-        && incoming().userId == request.auth.uid
+        && isValidActorId(incoming().userId)
         && incoming().status == 'pending'
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
-        && existsAfter(/databases/$(database)/documents/unit_reservations/$(incoming().unitCode));
+        && existsAfter(/databases/$(database)/documents/unit_reservations/$(incoming().unitCode))
+        && getAfter(/databases/$(database)/documents/unit_reservations/$(incoming().unitCode)).data.bookingId == bookingId
+        && getAfter(/databases/$(database)/documents/unit_reservations/$(incoming().unitCode)).data.bookedByUid == incoming().userId;
       allow update: if isVerifiedUser()
         && isValidId(bookingId)
         && isValidUnitBooking(incoming())

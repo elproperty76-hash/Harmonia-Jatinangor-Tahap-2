@@ -4,11 +4,9 @@ import {
   PDF_KEUNGGULAN,
   PDF_KONSEP_DESAIN,
 } from '../data/pdfContent';
-import {
-  buildOfficialWhatsappUrl,
-  OFFICIAL_WHATSAPP_NUMBER,
-} from '../utils/bookingLogic';
-import { ArrowRight, ShieldCheck, CheckCircle2, MessageCircle } from 'lucide-react';
+import { buildOfficialWhatsappUrl } from '../utils/bookingLogic';
+import { ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { WhatsappIcon } from './WhatsappIcon';
 
 interface HeroAndAboutProps {
   onBookingClick: () => void;
@@ -68,10 +66,11 @@ export function HeroAndAbout({ onBookingClick }: HeroAndAboutProps) {
                     href={heroWhatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 px-4 py-3.5 min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-lg transition-colors"
+                    aria-label="Hubungi WhatsApp"
+                    title="Hubungi via WhatsApp"
+                    className="inline-flex items-center justify-center w-12 h-12 min-w-[44px] min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors"
                   >
-                    <MessageCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span>WhatsApp {OFFICIAL_WHATSAPP_NUMBER}</span>
+                    <WhatsappIcon className="w-5 h-5" />
                   </a>
                   <a
                     href="#unit-denah"

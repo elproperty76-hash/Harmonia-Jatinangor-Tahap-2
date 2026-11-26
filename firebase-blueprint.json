@@ -27,7 +27,7 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Firebase Auth UID of the investor who reserved the unit."
+          "description": "Actor ID (Firebase Auth UID or guest client ID) of the investor who reserved the unit."
         },
         "bookingId": {
           "type": "string",
@@ -61,7 +61,7 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$",
-          "description": "Owner Firebase Auth UID."
+          "description": "Owner Firebase Auth UID or guest booking client ID."
         },
         "unitCode": {
           "type": "string",
@@ -177,7 +177,7 @@
       "schema": {
         "$ref": "#/entities/UnitBooking"
       },
-      "description": "Private online unit bookings owned by authenticated investors or managed by admin."
+      "description": "Private online unit bookings submitted by visitors or investors, readable only by owner or admin."
     }
   }
 }

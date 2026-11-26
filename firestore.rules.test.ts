@@ -9,7 +9,9 @@ test('firestore.rules includes default deny, email_verified check, and strict sc
   assert.match(rules, /request\.auth\.token\.email_verified == true/);
   assert.match(rules, /isValidUnitBooking/);
   assert.match(rules, /isValidUnitReservation/);
+  assert.match(rules, /isValidActorId/);
   assert.match(rules, /existsAfter\(/);
+  assert.match(rules, /getAfter\(/);
   assert.match(rules, /affectedKeys\(\)\.hasOnly\(/);
   assert.match(rules, /resource\.data\.userId == request\.auth\.uid/);
   assert.match(rules, /transferProofName/);

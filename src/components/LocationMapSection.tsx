@@ -280,7 +280,6 @@ export function LocationMapSection({
                     onOpenLightbox(
                       PDF_LOCATION.sketchImage,
                       'Peta Lokasi Jl. Cikuda — Harmonia Student House Jatinangor',
-                      'Halaman 4 Dokumen PDF · Resolusi Asli (620×355px)',
                     )
                   }
                   className="group relative sm:col-span-7 bg-white rounded-lg border border-slate-200 overflow-hidden cursor-pointer"
@@ -304,7 +303,6 @@ export function LocationMapSection({
                     onOpenLightbox(
                       PDF_LOCATION.studentImage,
                       'Kawasan Pendidikan Jatinangor — Harmonia Student House',
-                      'Halaman 4 Dokumen PDF · Resolusi Asli (555×880px)',
                     )
                   }
                   className="group relative sm:col-span-5 bg-white rounded-lg overflow-hidden border border-slate-200 cursor-pointer"

@@ -22,8 +22,6 @@ import {
   ADMIN_EMAIL,
   OperationType,
   handleFirestoreError,
-  signInWithGoogle,
-  signOutUser,
   testConnection,
 } from '../firebase';
 import { PDF_SITEPLAN, PDF_UNITS } from '../data/pdfContent';
@@ -39,17 +37,12 @@ import {
   buildOfficialWhatsappUrl,
   buildUnitInquiryWhatsappMessage,
   buildBookingConfirmationWhatsappMessage,
-  OFFICIAL_WHATSAPP_DISPLAY,
-  OFFICIAL_WHATSAPP_NUMBER,
   type BlockId,
   type PaymentScheme,
 } from '../utils/bookingLogic';
 import {
   Maximize2,
   CheckCircle2,
-  LogIn,
-  LogOut,
-  MessageCircle,
   ClipboardCheck,
   ShieldAlert,
   Database,
@@ -57,13 +50,13 @@ import {
   ArrowDown,
   Copy,
   Check,
-  UploadCloud,
   Upload,
   FileImage,
   Trash2,
   ZoomIn,
   Share2,
 } from 'lucide-react';
+import { WhatsappIcon } from './WhatsappIcon';
 
 interface UnitReservationRecord {
   unitCode: string;
@@ -108,6 +101,49 @@ interface SiteplanBookingSectionProps {
 }
 
 const LOCAL_BOOKINGS_KEY = 'harmonia_local_bookings_v1';
+const GUEST_CLIENT_ID_KEY = 'harmonia_guest_client_id_v1';
+
+function getOrCreateGuestClientId(): string {
+  try {
+    const existing = localStorage.getItem(GUEST_CLIENT_ID_KEY);
+    if (
+      existing &&
+      /^guest_[a-zA-Z0-9_\-]+$/.test(existing) &&
+      existing.length >= 8 &&
+      existing.length <= 64
+    ) {
+      return existing;
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 20)
+      : `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  const generated = `guest_${randomPart}`;
+  try {
+    localStorage.setItem(GUEST_CLIENT_ID_KEY, generated);
+  } catch {
+    // Ignore storage errors
+  }
+  return generated;
+}
+
+function triggerDirectWhatsapp(waUrl: string) {
+  try {
+    const link = document.createElement('a');
+    link.href = waUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch {
+    // Fallback link remains rendered in the confirmation card
+  }
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) {
@@ -152,7 +188,6 @@ export function SiteplanBookingSection({
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [availabilityCheckMsg, setAvailabilityCheckMsg] = useState<{
     unitCode: string;
     available: boolean;
@@ -160,7 +195,6 @@ export function SiteplanBookingSection({
   } | null>(null);
   const [isCheckingDb, setIsCheckingDb] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
   const [latestReceipt, setLatestReceipt] = useState<BookingRecord | null>(null);
   const [latestFiles, setLatestFiles] = useState<{
     transferFile: File;
@@ -171,13 +205,12 @@ export function SiteplanBookingSection({
 
   const isAdmin = Boolean(user?.emailVerified && user?.email === ADMIN_EMAIL);
 
-  // Sync auth state
+  // Sync auth state silently (used for admin capabilities if logged in)
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((currentUser) => {
       setUser(currentUser);
       setAuthReady(true);
       if (currentUser) {
-        setAuthNotice(null);
         setFullName((prev) => prev || currentUser.displayName || '');
         setEmail((prev) => prev || currentUser.email || '');
       }
@@ -276,11 +309,11 @@ export function SiteplanBookingSection({
     return () => unsub();
   }, [authReady, user, isAdmin]);
 
-  // Taken unit codes from both cloud reservations and non-cancelled local bookings
+  // Taken unit codes from cloud reservations plus any offline-only local fallback bookings
   const takenUnitCodes = useMemo(() => {
     const set = new Set<string>(Object.keys(cloudReservations));
     for (const lb of localBookings) {
-      if (lb.status !== 'cancelled') {
+      if (lb.status !== 'cancelled' && lb.source === 'local') {
         set.add(lb.unitCode);
       }
     }
@@ -334,29 +367,6 @@ export function SiteplanBookingSection({
     }
     return merged;
   }, [cloudBookings, localBookings]);
-
-  const unsyncedPendingLocals = useMemo(
-    () =>
-      localBookings.filter(
-        (lb) =>
-          lb.status !== 'cancelled' &&
-          !cloudReservations[lb.unitCode] &&
-          !cloudBookings.some((cb) => cb.bookingCode === lb.bookingCode),
-      ),
-    [localBookings, cloudReservations, cloudBookings],
-  );
-
-  async function handleGoogleSignIn() {
-    setAuthNotice(null);
-    try {
-      await signInWithGoogle();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes('popup-closed-by-user')) {
-        setAuthNotice('Gagal masuk dengan Google. Pastikan pop-up diizinkan di browser Anda.');
-      }
-    }
-  }
 
   async function handleCheckDatabaseAvailability(unitCode: string) {
     setIsCheckingDb(true);
@@ -503,110 +513,115 @@ export function SiteplanBookingSection({
     const cleanNotes = notes.trim();
     const submittedTransfer = transferProof!;
     const submittedKtp = ktpPhoto!;
+    const actorId =
+      user && user.emailVerified ? user.uid : getOrCreateGuestClientId();
+
+    const whatsappMessage = buildBookingConfirmationWhatsappMessage({
+      bookingCode,
+      unitCode: selectedUnitCode,
+      blockName: activeUnitDetail.title,
+      investmentValueLabel: roiSpec.nilaiInvestasiLabel,
+      fullName: cleanName,
+      whatsapp: normalizedWa,
+      email: cleanEmail,
+      paymentScheme,
+      transferProofName: submittedTransfer.name,
+      ktpPhotoName: submittedKtp.name,
+      notes: cleanNotes,
+    });
+    const whatsappUrl = buildOfficialWhatsappUrl(whatsappMessage);
 
     try {
-      if (user && user.emailVerified) {
-        // Real-time pre-commit check against Firestore database
-        try {
-          const serverCheck = await getDocFromServer(
-            doc(db, 'unit_reservations', selectedUnitCode),
+      // Real-time pre-commit check against Firestore database
+      try {
+        const serverCheck = await getDocFromServer(
+          doc(db, 'unit_reservations', selectedUnitCode),
+        );
+        if (serverCheck.exists()) {
+          const existingRes = serverCheck.data() as UnitReservationRecord;
+          setCloudReservations((prev) => ({ ...prev, [selectedUnitCode]: existingRes }));
+          setSubmitError(
+            `Maaf, Unit ${selectedUnitCode} baru saja dibooking di database Tahap 2. Silakan pilih unit lain yang masih tersedia.`,
           );
-          if (serverCheck.exists()) {
-            const existingRes = serverCheck.data() as UnitReservationRecord;
-            setCloudReservations((prev) => ({ ...prev, [selectedUnitCode]: existingRes }));
-            setSubmitError(
-              `Maaf, Unit ${selectedUnitCode} baru saja dibooking di database Tahap 2. Silakan pilih unit lain yang masih tersedia.`,
-            );
-            return;
-          }
-        } catch {
-          // Continue with atomic writeBatch which is also protected by Firestore Rules
+          return;
         }
+      } catch {
+        // Proceed with atomic writeBatch guarded by Firestore security rules
+      }
 
-        const bookingDocRef = doc(collection(db, 'bookings'));
-        const reservationDocRef = doc(db, 'unit_reservations', selectedUnitCode);
+      const bookingDocRef = doc(collection(db, 'bookings'));
+      const reservationDocRef = doc(db, 'unit_reservations', selectedUnitCode);
 
-        const batch = writeBatch(db);
-        batch.set(bookingDocRef, {
-          bookingCode,
-          userId: user.uid,
-          unitCode: selectedUnitCode,
-          blockId: selectedBlock,
-          blockName: activeUnitDetail.title,
-          fullName: cleanName,
-          whatsapp: normalizedWa,
-          email: cleanEmail,
-          paymentScheme,
-          notes: cleanNotes,
-          transferProofName: submittedTransfer.name,
-          ktpPhotoName: submittedKtp.name,
-          status: 'pending',
-          investmentValueLabel: roiSpec.nilaiInvestasiLabel,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        batch.set(reservationDocRef, {
+      const batch = writeBatch(db);
+      batch.set(bookingDocRef, {
+        bookingCode,
+        userId: actorId,
+        unitCode: selectedUnitCode,
+        blockId: selectedBlock,
+        blockName: activeUnitDetail.title,
+        fullName: cleanName,
+        whatsapp: normalizedWa,
+        email: cleanEmail,
+        paymentScheme,
+        notes: cleanNotes,
+        transferProofName: submittedTransfer.name,
+        ktpPhotoName: submittedKtp.name,
+        status: 'pending',
+        investmentValueLabel: roiSpec.nilaiInvestasiLabel,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(reservationDocRef, {
+        unitCode: selectedUnitCode,
+        blockId: selectedBlock,
+        status: 'booked',
+        bookedByUid: actorId,
+        bookingId: bookingDocRef.id,
+        updatedAt: serverTimestamp(),
+      });
+
+      try {
+        await batch.commit();
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `bookings/${bookingDocRef.id}`);
+      }
+
+      // Immediately reflect unit lock in red while onSnapshot syncs
+      setCloudReservations((prev) => ({
+        ...prev,
+        [selectedUnitCode]: {
           unitCode: selectedUnitCode,
           blockId: selectedBlock,
           status: 'booked',
-          bookedByUid: user.uid,
+          bookedByUid: actorId,
           bookingId: bookingDocRef.id,
-          updatedAt: serverTimestamp(),
-        });
+        },
+      }));
+      setDbSyncStatus('live');
 
-        try {
-          await batch.commit();
-        } catch (err) {
-          handleFirestoreError(err, OperationType.WRITE, `bookings/${bookingDocRef.id}`);
-        }
+      const record: BookingRecord = {
+        id: bookingDocRef.id,
+        bookingCode,
+        userId: actorId,
+        unitCode: selectedUnitCode,
+        blockId: selectedBlock,
+        blockName: activeUnitDetail.title,
+        fullName: cleanName,
+        whatsapp: normalizedWa,
+        email: cleanEmail,
+        paymentScheme,
+        notes: cleanNotes,
+        transferProofName: submittedTransfer.name,
+        ktpPhotoName: submittedKtp.name,
+        transferProofPreviewUrl: submittedTransfer.previewUrl,
+        ktpPhotoPreviewUrl: submittedKtp.previewUrl,
+        status: 'pending',
+        investmentValueLabel: roiSpec.nilaiInvestasiLabel,
+        source: 'cloud',
+      };
 
-        const record: BookingRecord = {
-          id: bookingDocRef.id,
-          bookingCode,
-          userId: user.uid,
-          unitCode: selectedUnitCode,
-          blockId: selectedBlock,
-          blockName: activeUnitDetail.title,
-          fullName: cleanName,
-          whatsapp: normalizedWa,
-          email: cleanEmail,
-          paymentScheme,
-          notes: cleanNotes,
-          transferProofName: submittedTransfer.name,
-          ktpPhotoName: submittedKtp.name,
-          transferProofPreviewUrl: submittedTransfer.previewUrl,
-          ktpPhotoPreviewUrl: submittedKtp.previewUrl,
-          status: 'pending',
-          investmentValueLabel: roiSpec.nilaiInvestasiLabel,
-          source: 'cloud',
-        };
-        setLatestReceipt(record);
-      } else {
-        // Seamless guest booking persisted locally with option to sync via Google Sign-In
-        const localRecord: BookingRecord = {
-          id: `local-${Date.now()}`,
-          bookingCode,
-          userId: 'guest',
-          unitCode: selectedUnitCode,
-          blockId: selectedBlock,
-          blockName: activeUnitDetail.title,
-          fullName: cleanName,
-          whatsapp: normalizedWa,
-          email: cleanEmail,
-          paymentScheme,
-          notes: cleanNotes,
-          transferProofName: submittedTransfer.name,
-          ktpPhotoName: submittedKtp.name,
-          transferProofPreviewUrl: submittedTransfer.previewUrl,
-          ktpPhotoPreviewUrl: submittedKtp.previewUrl,
-          status: 'pending',
-          investmentValueLabel: roiSpec.nilaiInvestasiLabel,
-          source: 'local',
-        };
-        setLocalBookings((prev) => [localRecord, ...prev]);
-        setLatestReceipt(localRecord);
-      }
-
+      setLocalBookings((prev) => [record, ...prev]);
+      setLatestReceipt(record);
       setLatestFiles({
         transferFile: submittedTransfer.file,
         ktpFile: submittedKtp.file,
@@ -617,6 +632,9 @@ export function SiteplanBookingSection({
       if (transferInputRef.current) transferInputRef.current.value = '';
       if (ktpInputRef.current) ktpInputRef.current.value = '';
       setAvailabilityCheckMsg(null);
+
+      // Directly open WhatsApp with the full booking summary
+      triggerDirectWhatsapp(whatsappUrl);
     } catch (err) {
       setSubmitError(
         err instanceof Error
@@ -625,58 +643,6 @@ export function SiteplanBookingSection({
       );
     } finally {
       setIsSubmitting(false);
-    }
-  }
-
-  async function handleSyncLocalToCloud() {
-    if (!user || !user.emailVerified || unsyncedPendingLocals.length === 0) return;
-    setIsSyncingCloud(true);
-    setSubmitError(null);
-    try {
-      for (const localBk of unsyncedPendingLocals) {
-        const checkSnap = await getDocFromServer(doc(db, 'unit_reservations', localBk.unitCode));
-        if (checkSnap.exists()) {
-          setSubmitError(
-            `Unit ${localBk.unitCode} pada booking lokal sudah terlebih dahulu dibooking di database.`,
-          );
-          continue;
-        }
-        const bookingDocRef = doc(collection(db, 'bookings'));
-        const reservationDocRef = doc(db, 'unit_reservations', localBk.unitCode);
-        const batch = writeBatch(db);
-        batch.set(bookingDocRef, {
-          bookingCode: localBk.bookingCode,
-          userId: user.uid,
-          unitCode: localBk.unitCode,
-          blockId: localBk.blockId,
-          blockName: localBk.blockName,
-          fullName: localBk.fullName,
-          whatsapp: localBk.whatsapp,
-          email: localBk.email,
-          paymentScheme: localBk.paymentScheme,
-          notes: localBk.notes,
-          transferProofName: localBk.transferProofName || 'bukti-transfer.jpg',
-          ktpPhotoName: localBk.ktpPhotoName || 'ktp-pemohon.jpg',
-          status: 'pending',
-          investmentValueLabel: localBk.investmentValueLabel,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        batch.set(reservationDocRef, {
-          unitCode: localBk.unitCode,
-          blockId: localBk.blockId,
-          status: 'booked',
-          bookedByUid: user.uid,
-          bookingId: bookingDocRef.id,
-          updatedAt: serverTimestamp(),
-        });
-        await batch.commit();
-        setLocalBookings((prev) => prev.filter((item) => item.id !== localBk.id));
-      }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'bookings');
-    } finally {
-      setIsSyncingCloud(false);
     }
   }
 
@@ -742,7 +708,7 @@ export function SiteplanBookingSection({
       }
     }
     setShareNotice(
-      `Browser ini belum mendukung lampiran file otomatis. Klik tombol "Kirim ke WhatsApp ${OFFICIAL_WHATSAPP_NUMBER}" lalu lampirkan 2 foto secara manual di chat WhatsApp.`,
+      'Browser ini belum mendukung lampiran file otomatis. Klik tombol "Kirim ke WhatsApp" lalu lampirkan 2 foto secara manual di chat WhatsApp.',
     );
   }
 
@@ -770,7 +736,7 @@ export function SiteplanBookingSection({
                 onOpenLightbox(
                   PDF_SITEPLAN.image,
                   PDF_SITEPLAN.title,
-                  'Siteplan Lengkap Blok A–H (Total 107 Unit · Resolusi Asli PDF)',
+                  'Siteplan Lengkap Blok A–H (Total 107 Unit)',
                 )
               }
               className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-white border border-slate-300 text-[#1C2A44] text-xs sm:text-sm font-semibold rounded-lg hover:bg-slate-50 self-start cursor-pointer"
@@ -786,7 +752,7 @@ export function SiteplanBookingSection({
               onOpenLightbox(
                 PDF_SITEPLAN.image,
                 PDF_SITEPLAN.title,
-                'Siteplan Lengkap Blok A–H (Total 107 Unit · Resolusi Asli PDF)',
+                'Siteplan Lengkap Blok A–H (Total 107 Unit)',
               )
             }
             className="block w-full bg-white border border-slate-200 rounded-xl overflow-hidden cursor-pointer"
@@ -844,6 +810,14 @@ export function SiteplanBookingSection({
                     {availabilitySummary.totalAvailable}/{availabilitySummary.totalUnits} Unit Tahap 2 Tersedia
                   </span>
                 </span>
+                {availabilitySummary.totalBooked > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 border border-red-200 text-[11px] font-semibold text-red-700">
+                    <span className="w-2 h-2 rounded-xs bg-red-600 inline-block" aria-hidden="true" />
+                    <span className="font-mono tabular-nums">
+                      {availabilitySummary.totalBooked} Unit Sudah Dibooking
+                    </span>
+                  </span>
+                )}
               </div>
               <p className="text-sm text-slate-600">
                 Cek ketersediaan unit tahap 2 secara langsung dari database, pilih kode unit siteplan, lalu lengkapi formulir pemesanan syariah.
@@ -867,42 +841,12 @@ export function SiteplanBookingSection({
                 )}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white text-xs sm:text-sm font-semibold rounded-lg transition-colors"
+                aria-label="Hubungi WhatsApp"
+                title="Hubungi via WhatsApp"
+                className="inline-flex items-center justify-center w-11 h-11 min-w-[44px] min-h-[44px] bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg transition-colors"
               >
-                <MessageCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-                <span>WhatsApp {OFFICIAL_WHATSAPP_DISPLAY}</span>
+                <WhatsappIcon className="w-5 h-5" />
               </a>
-
-              {user ? (
-                <div className="flex items-center gap-3 bg-[#FAFAFA] border border-slate-200 rounded-lg px-3.5 py-2">
-                  <div className="text-xs">
-                    <p className="font-bold text-[#1C2A44] truncate max-w-[160px]">
-                      {user.displayName || user.email}
-                    </p>
-                    <p className="text-slate-500">
-                      {isAdmin ? 'Admin Harmonia' : 'Akun Investor Terhubung'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void signOutUser()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-semibold text-slate-700 border border-slate-300 rounded-md hover:bg-white cursor-pointer"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Keluar</span>
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => void handleGoogleSignIn()}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-[#FAFAFA] hover:bg-slate-100 border border-slate-300 text-[#1C2A44] text-xs sm:text-sm font-semibold rounded-lg transition-colors cursor-pointer"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span>Masuk dengan Google (Simpan Cloud)</span>
-                </button>
-              )}
-              {authNotice && <p className="text-xs text-red-600">{authNotice}</p>}
             </div>
           </div>
 
@@ -976,9 +920,9 @@ export function SiteplanBookingSection({
                   <span className="w-3 h-3 rounded-xs bg-[#F2BA36] inline-block" />
                   Dipilih
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-xs bg-slate-200 inline-block" />
-                  Terbooking / Terkonfirmasi
+                <span className="inline-flex items-center gap-1.5 text-red-700 font-medium">
+                  <span className="w-3 h-3 rounded-xs bg-red-600 border border-red-700 inline-block" />
+                  Sudah Dibooking / Terkonfirmasi
                 </span>
               </div>
 
@@ -988,9 +932,16 @@ export function SiteplanBookingSection({
                   <span className="font-semibold text-[#1C2A44] truncate">
                     {activeUnitDetail.title}
                   </span>
-                  <span className="font-mono tabular-nums shrink-0">
-                    {filteredUnits.filter((u) => getUnitStatus(u.unitCode) === 'available').length}/
-                    {filteredUnits.length} Tersedia
+                  <span className="font-mono tabular-nums shrink-0 flex items-center gap-2">
+                    <span>
+                      {filteredUnits.filter((u) => getUnitStatus(u.unitCode) === 'available').length}/
+                      {filteredUnits.length} Tersedia
+                    </span>
+                    {filteredUnits.some((u) => getUnitStatus(u.unitCode) !== 'available') && (
+                      <span className="text-red-600 font-semibold">
+                        · {filteredUnits.filter((u) => getUnitStatus(u.unitCode) !== 'available').length} Dibooking
+                      </span>
+                    )}
                   </span>
                 </div>
 
@@ -1005,6 +956,11 @@ export function SiteplanBookingSection({
                         key={unit.unitCode}
                         type="button"
                         disabled={isTaken}
+                        title={
+                          isTaken
+                            ? `Unit ${unit.unitCode} sudah dibooking`
+                            : `Pilih Unit ${unit.unitCode}`
+                        }
                         onClick={() => {
                           setSelectedUnitCode(unit.unitCode);
                           setAvailabilityCheckMsg(null);
@@ -1012,7 +968,7 @@ export function SiteplanBookingSection({
                         aria-label={`Unit ${unit.unitCode} ${isTaken ? 'sudah terbooking' : 'tersedia'}`}
                         className={`min-h-[44px] px-2 py-2 rounded-lg text-xs font-mono font-semibold tabular-nums border transition-colors ${
                           isTaken
-                            ? 'bg-slate-200 text-slate-500 border-slate-200 cursor-not-allowed line-through'
+                            ? 'bg-red-600 text-white border-red-700 cursor-not-allowed'
                             : isSelected
                               ? 'bg-[#F2BA36] text-[#1C2A44] border-[#D9A024] ring-2 ring-[#1C2A44]/20 cursor-pointer'
                               : 'bg-white text-[#1C2A44] border-slate-200 hover:border-[#1C2A44] cursor-pointer'
@@ -1030,8 +986,17 @@ export function SiteplanBookingSection({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
                     <p className="text-white/70">Unit Dipilih</p>
-                    <p className="text-base font-bold font-mono tabular-nums text-[#F2BA36] mt-0.5">
-                      {selectedUnitCode}
+                    <p
+                      className={`text-base font-bold font-mono tabular-nums mt-0.5 flex flex-wrap items-center gap-1.5 ${
+                        selectedUnitStatus !== 'available' ? 'text-red-400' : 'text-[#F2BA36]'
+                      }`}
+                    >
+                      <span>{selectedUnitCode}</span>
+                      {selectedUnitStatus !== 'available' && (
+                        <span className="text-[10px] font-sans font-semibold px-1.5 py-0.5 rounded bg-red-600 text-white">
+                          Dibooking
+                        </span>
+                      )}
                     </p>
                   </div>
                   <div>
@@ -1087,7 +1052,7 @@ export function SiteplanBookingSection({
                       rel="noopener noreferrer"
                       className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white"
                     >
-                      <MessageCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <WhatsappIcon className="w-4 h-4 shrink-0" />
                       <span>Tanya Unit {selectedUnitCode} via WhatsApp</span>
                     </a>
                   </div>
@@ -1419,8 +1384,8 @@ export function SiteplanBookingSection({
                   className="w-full py-3.5 px-5 min-h-[48px] bg-[#1C2A44] hover:bg-[#142035] disabled:bg-slate-300 disabled:text-slate-500 text-white text-sm font-bold rounded-lg transition-colors cursor-pointer"
                 >
                   {isSubmitting
-                    ? 'Memverifikasi & Menyimpan Booking...'
-                    : `Konfirmasi Booking Unit ${selectedUnitCode} & Siapkan WhatsApp`}
+                    ? 'Menyimpan Booking & Mengirim ke WhatsApp...'
+                    : `Booking Unit ${selectedUnitCode} & Kirim ke WhatsApp`}
                 </button>
               </form>
             </div>
@@ -1453,7 +1418,7 @@ export function SiteplanBookingSection({
                     <CheckCircle2 className="w-6 h-6 text-[#F2BA36] shrink-0 mt-0.5" />
                     <div className="space-y-1">
                       <h3 className="text-lg font-bold">
-                        Booking Unit {latestReceipt.unitCode} Siap Dikirim ke WhatsApp ({OFFICIAL_WHATSAPP_NUMBER})
+                        Booking Unit {latestReceipt.unitCode} Tersimpan &amp; Terkirim ke WhatsApp
                       </h3>
                       <p className="text-xs sm:text-sm text-white/85">
                         Kode Referensi:{' '}
@@ -1469,9 +1434,7 @@ export function SiteplanBookingSection({
                           : 'Cicilan Syariah'}{' '}
                         · Status:{' '}
                         <strong className="text-[#F2BA36]">
-                          {latestReceipt.source === 'cloud'
-                            ? 'Tersimpan di Database Cloud'
-                            : 'Tersimpan di Perangkat (Klik Masuk Google untuk sinkron ke Cloud)'}
+                          Tersimpan Otomatis di Database (Unit Berwarna Merah)
                         </strong>
                       </p>
                     </div>
@@ -1513,8 +1476,8 @@ export function SiteplanBookingSection({
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-bold rounded-lg transition-colors"
                     >
-                      <MessageCircle className="w-4 h-4 shrink-0" />
-                      <span>Kirim ke WhatsApp {OFFICIAL_WHATSAPP_NUMBER}</span>
+                      <WhatsappIcon className="w-4 h-4 shrink-0" />
+                      <span>Kirim ke WhatsApp</span>
                     </a>
                   </div>
                 </div>
@@ -1581,7 +1544,7 @@ export function SiteplanBookingSection({
 
                   <div className="lg:col-span-7 bg-white/10 border border-white/15 rounded-lg p-3 space-y-1.5">
                     <p className="text-[11px] font-semibold text-[#F2BA36]">
-                      Ringkasan Pesan WhatsApp ke {OFFICIAL_WHATSAPP_DISPLAY}
+                      Ringkasan Pesan WhatsApp
                     </p>
                     <p className="text-xs text-white/85 whitespace-pre-line leading-relaxed">
                       {whatsappMessage}
@@ -1590,7 +1553,7 @@ export function SiteplanBookingSection({
                 </div>
 
                 <p className="text-[11px] text-white/80">
-                  Klik tombol hijau <strong className="text-white">Kirim ke WhatsApp {OFFICIAL_WHATSAPP_NUMBER}</strong> di atas untuk membuka chat WhatsApp dengan format booking otomatis, lalu sertakan kedua foto (Bukti Transfer &amp; KTP) pada chat WhatsApp tersebut.
+                  Klik tombol hijau <strong className="text-white">Kirim ke WhatsApp</strong> di atas untuk membuka chat WhatsApp dengan format booking otomatis, lalu sertakan kedua foto (Bukti Transfer &amp; KTP) pada chat WhatsApp tersebut.
                 </p>
 
                 {shareNotice && (
@@ -1608,25 +1571,10 @@ export function SiteplanBookingSection({
               <div className="flex items-center gap-2">
                 <ClipboardCheck className="w-5 h-5 text-[#1C2A44]" aria-hidden="true" />
                 <h3 className="text-base font-bold text-[#1C2A44]">
-                  {isAdmin ? 'Daftar Semua Booking Unit (Admin)' : 'Riwayat Booking Unit Saya'}
+                  {isAdmin ? 'Daftar Semua Booking Unit (Admin)' : 'Data Booking Unit'}
                 </h3>
               </div>
               <div className="flex items-center gap-3">
-                {user?.emailVerified && unsyncedPendingLocals.length > 0 && (
-                  <button
-                    type="button"
-                    disabled={isSyncingCloud}
-                    onClick={() => void handleSyncLocalToCloud()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] rounded-lg bg-[#1C2A44] text-white text-xs font-semibold cursor-pointer"
-                  >
-                    <UploadCloud className="w-3.5 h-3.5 text-[#F2BA36]" />
-                    <span>
-                      {isSyncingCloud
-                        ? 'Menyinkronkan...'
-                        : `Sinkronkan ${unsyncedPendingLocals.length} Booking ke Cloud`}
-                    </span>
-                  </button>
-                )}
                 <span className="text-xs font-mono tabular-nums text-slate-500">
                   {visibleBookings.length} Data
                 </span>
@@ -1665,12 +1613,18 @@ export function SiteplanBookingSection({
                           <span className="font-mono text-sm font-bold text-[#1C2A44]">
                             Unit {bk.unitCode} · {bk.bookingCode}
                           </span>
-                          <span className="text-xs font-semibold text-[#1C2A44]">
+                          <span
+                            className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border ${
+                              bk.status === 'cancelled'
+                                ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                : 'bg-red-50 text-red-700 border-red-200'
+                            }`}
+                          >
                             {bk.status === 'confirmed'
                               ? 'Terkonfirmasi'
                               : bk.status === 'cancelled'
                                 ? 'Dibatalkan'
-                                : 'Menunggu Konfirmasi'}
+                                : 'Sudah Dibooking'}
                           </span>
                         </div>
                         <p className="text-xs text-slate-600">{bk.blockName}</p>
@@ -1691,7 +1645,7 @@ export function SiteplanBookingSection({
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold rounded-md"
                         >
-                          <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                          <WhatsappIcon className="w-3.5 h-3.5 shrink-0" />
                           <span>Kirim WhatsApp</span>
                         </a>
 

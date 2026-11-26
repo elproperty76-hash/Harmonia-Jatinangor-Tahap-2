@@ -12,10 +12,9 @@ import { LightboxModal } from './components/LightboxModal';
 import { PDF_GALLERY, PDF_HERO } from './data/pdfContent';
 import {
   buildOfficialWhatsappUrl,
-  OFFICIAL_WHATSAPP_NUMBER,
   type BlockId,
 } from './utils/bookingLogic';
-import { MessageCircle } from 'lucide-react';
+import { WhatsappIcon } from './components/WhatsappIcon';
 
 interface LightboxState {
   isOpen: boolean;
@@ -88,7 +87,6 @@ export default function App() {
       isOpen: true,
       src: item.image,
       title: item.title,
-      caption: `Halaman ${item.pageRef} · Resolusi Asli PDF (${item.width}×${item.height}px)`,
       galleryIndex: index,
     });
   }, []);
@@ -203,10 +201,11 @@ export default function App() {
                 )}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 min-h-[40px] rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white font-semibold transition-colors"
+                aria-label="Hubungi WhatsApp"
+                title="Hubungi via WhatsApp"
+                className="inline-flex items-center justify-center w-10 h-10 min-w-[40px] min-h-[40px] rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white transition-colors"
               >
-                <MessageCircle className="w-4 h-4" aria-hidden="true" />
-                <span>WhatsApp {OFFICIAL_WHATSAPP_NUMBER}</span>
+                <WhatsappIcon className="w-5 h-5" />
               </a>
             </div>
           </div>

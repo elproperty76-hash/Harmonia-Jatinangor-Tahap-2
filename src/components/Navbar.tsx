@@ -9,12 +9,9 @@ import {
   Info,
   CalendarCheck,
   ShieldCheck,
-  MessageCircle,
 } from 'lucide-react';
-import {
-  buildOfficialWhatsappUrl,
-  OFFICIAL_WHATSAPP_DISPLAY,
-} from '../utils/bookingLogic';
+import { buildOfficialWhatsappUrl } from '../utils/bookingLogic';
+import { WhatsappIcon } from './WhatsappIcon';
 
 interface NavbarProps {
   activeSection: string;
@@ -83,14 +80,11 @@ export function Navbar({ activeSection, onBookingClick }: NavbarProps) {
             href={GENERAL_WA_URL}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Hubungi WhatsApp ${OFFICIAL_WHATSAPP_DISPLAY}`}
-            className="inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 min-h-[40px] min-w-[40px] text-xs font-semibold text-[#15803D] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#15803D]"
+            aria-label="Hubungi WhatsApp"
+            title="Hubungi via WhatsApp"
+            className="inline-flex items-center justify-center w-10 h-10 min-h-[40px] min-w-[40px] text-[#15803D] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#15803D]"
           >
-            <MessageCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span className="hidden lg:inline font-mono tabular-nums">
-              {OFFICIAL_WHATSAPP_DISPLAY}
-            </span>
-            <span className="hidden sm:inline lg:hidden">WhatsApp</span>
+            <WhatsappIcon className="w-5 h-5" />
           </a>
 
           <button
@@ -153,8 +147,8 @@ export function Navbar({ activeSection, onBookingClick }: NavbarProps) {
               onClick={() => setMobileOpen(false)}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 min-h-[46px] bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-bold rounded-xl"
             >
-              <MessageCircle className="w-4 h-4" aria-hidden="true" />
-              <span>Chat WhatsApp · 6281533332611</span>
+              <WhatsappIcon className="w-5 h-5" />
+              <span>Chat WhatsApp</span>
             </a>
 
             <button
