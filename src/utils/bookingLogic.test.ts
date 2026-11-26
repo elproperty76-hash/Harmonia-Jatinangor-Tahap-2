@@ -86,9 +86,9 @@ test('validateAttachmentFile enforces image type and 10MB limit', () => {
   );
 });
 
-test('official WhatsApp URL and booking confirmation text target 6281533332611 with attachment info', () => {
-  assert.equal(OFFICIAL_WHATSAPP_NUMBER, '6281533332611');
-  assert.equal(buildOfficialWhatsappUrl(), 'https://wa.me/6281533332611');
+test('official WhatsApp URL and booking confirmation text target 6281319378485 with attachment info', () => {
+  assert.equal(OFFICIAL_WHATSAPP_NUMBER, '6281319378485');
+  assert.equal(buildOfficialWhatsappUrl(), 'https://wa.me/6281319378485');
 
   const inquiry = buildUnitInquiryWhatsappMessage({
     unitCode: 'E12',
@@ -115,7 +115,7 @@ test('official WhatsApp URL and booking confirmation text target 6281533332611 w
   assert.match(confirmText, /HSHJ-E12-ABCD/);
   assert.match(confirmText, /transfer-dp\.jpg/);
   assert.match(confirmText, /ktp-siti\.jpg/);
-  assert.match(buildOfficialWhatsappUrl(confirmText), /^https:\/\/wa\.me\/6281533332611\?text=/);
+  assert.match(buildOfficialWhatsappUrl(confirmText), /^https:\/\/wa\.me\/6281319378485\?text=/);
 });
 
 test('calculateInvestmentProjection computes exact PDF totals for multiple units', () => {

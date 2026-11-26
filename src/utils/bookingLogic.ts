@@ -45,8 +45,8 @@ export interface RoiBlockSpec {
   roiTotalLabel: string;
 }
 
-export const OFFICIAL_WHATSAPP_NUMBER = '6281533332611';
-export const OFFICIAL_WHATSAPP_DISPLAY = '+62 815-3333-2611';
+export const OFFICIAL_WHATSAPP_NUMBER = '6281319378485';
+export const OFFICIAL_WHATSAPP_DISPLAY = '+62 813-1937-8485';
 export const ALLOWED_IMAGE_MIME_TYPES = [
   'image/jpeg',
   'image/jpg',
